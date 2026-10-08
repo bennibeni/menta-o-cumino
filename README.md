@@ -27,3 +27,14 @@ Dopo il deploy inserire l’URL reale in `links-page-main/data/projects.mjs`, ca
 
 Facile: facce colorate. Difficile: gruppi ai vertici e recettore a disco.
 Sono analogie geometriche, non strutture complete del carvone o recettori biologici reali.
+
+## Visual Studio Code
+
+Aprire la cartella radice del progetto e installare le estensioni consigliate dalla sezione Extensions. La configurazione locale abilita Prettier al salvataggio e le correzioni ESLint al salvataggio esplicito. Le impostazioni globali di VS Code restano invariate.
+
+- `npm run lint`: controlla il codice.
+- `npm run lint:fix`: applica le correzioni automatiche ESLint.
+- `npm run format`: formatta i file con Prettier.
+- `npm run format:check`: verifica la formattazione senza modificare i file.
+
+`.editorconfig` uniforma UTF-8, indentazione e fine riga LF. `jsconfig.json` configura la navigazione JavaScript/JSX senza introdurre TypeScript nel progetto. `eslint-config-prettier` disattiva eventuali regole stilistiche in conflitto con Prettier.

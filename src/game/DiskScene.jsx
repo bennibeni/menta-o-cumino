@@ -1,4 +1,3 @@
-
 import { useRef, useState } from 'react';
 import styles from './ChiralityGame.module.css';
 import { diskGroups } from './geometry';
