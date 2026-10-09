@@ -1,4 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useMusicalHint } from './useMusicalHint';
+import { createMusicRound } from './tonalMusic';
 import {
   FACES,
   VERTICES,
@@ -201,38 +203,87 @@ function Tetrahedron({
   );
 }
 
+function createRoundState(previousMusic, id) {
+  const top = Math.floor(Math.random() * 4);
+  return {
+    music: createMusicRound(previousMusic),
+    top,
+    topA: (top + 1) % 4,
+    topB: (top + 2) % 4,
+    type: Math.random() < 0.5 ? 'A' : 'B',
+    matrix: threeFaceRotation(Math.random() * Math.PI * 2),
+    diskAngle: Math.random() * Math.PI * 2,
+    angleA: Math.random() * Math.PI * 2,
+    angleB: Math.random() * Math.PI * 2,
+    moleculeA: threeFaceRotation(Math.random() * Math.PI * 2),
+    moleculeB: threeFaceRotation(Math.random() * Math.PI * 2),
+    id,
+  };
+}
+
 export default function ChiralityGame() {
   const [view, setView] = useState('mold');
+  const [noteCounts, setNoteCounts] = useState({ A: 0, B: 0 });
+  const [notesTotal, setNotesTotal] = useState(0);
+  const music = useMusicalHint((target, count) => {
+    setNotesTotal((previous) => previous + count);
+    setNoteCounts((previous) => ({ ...previous, [target]: previous[target] + count }));
+  });
+
+  function changeView(next) {
+    music.stop();
+    setView(next);
+  }
+  function listenButton(type, target, title) {
+    if (!round) return null;
+    return (
+      <button
+        type="button"
+        className={styles.listenButton}
+        title={`${music.target === target ? 'Interrompi' : 'Ascolta'} ${title}`}
+        aria-label={`${music.target === target ? 'Interrompi' : 'Ascolta'} ${title}`}
+        aria-pressed={music.target === target}
+        onClick={() => {
+          if (music.target === target) music.stop();
+          else music.play(round.music.modes[type], target, title, round.music.phraseId);
+        }}
+      >
+        <span aria-hidden="true">{music.target === target ? '■' : '♪'}</span>
+      </button>
+    );
+  }
   const [round, setRound] = useState(null);
   const [history, setHistory] = useState([]);
   const [answer, setAnswer] = useState(null);
   const nextButton = useRef(null);
+  const resultsDialog = useRef(null);
   const score = history.filter(Boolean).length;
   const finished = history.length === TOTAL;
+  useEffect(() => {
+    if (finished) resultsDialog.current?.showModal();
+    else resultsDialog.current?.close();
+  }, [finished]);
+  const turnsStarted = round ? Math.min(history.length + (answer === null ? 1 : 0), TOTAL) : 0;
+  const notesPerTurn = turnsStarted
+    ? (notesTotal / turnsStarted).toLocaleString('it-IT', { maximumFractionDigits: 1 })
+    : '—';
 
   function newRound(restart = false) {
-    if (restart) setHistory([]);
+    music.stop();
+    setNoteCounts({ A: 0, B: 0 });
+    if (restart) {
+      setHistory([]);
+      setNotesTotal(0);
+    }
     setAnswer(null);
-    const top = Math.floor(Math.random() * 4);
-    setRound({
-      top,
-      topA: (top + 1) % 4,
-      topB: (top + 2) % 4,
-      type: Math.random() < 0.5 ? 'A' : 'B',
-      matrix: threeFaceRotation(Math.random() * Math.PI * 2),
-      diskAngle: Math.random() * Math.PI * 2,
-      angleA: Math.random() * Math.PI * 2,
-      angleB: Math.random() * Math.PI * 2,
-      moleculeA: threeFaceRotation(Math.random() * Math.PI * 2),
-      moleculeB: threeFaceRotation(Math.random() * Math.PI * 2),
-      id: restart ? 0 : history.length,
-    });
+    setRound(createRoundState(round?.music, restart ? 0 : history.length));
   }
   function guess(type) {
     if (!round || answer !== null) return;
+    music.stop();
     setAnswer(type);
     setHistory((previous) => [...previous, type === round.type]);
-    requestAnimationFrame(() => nextButton.current?.focus());
+    if (history.length < TOTAL - 1) requestAnimationFrame(() => nextButton.current?.focus());
   }
   function candidate(type) {
     return (
@@ -262,12 +313,59 @@ export default function ChiralityGame() {
             label={`Molecola ${MOLECULES[type].aroma}`}
           />
         )}
-        <p>Ruota e confronta l’ordine delle zone.</p>
+        {listenButton(type, type, MOLECULES[type].aroma)}
+        {round && (
+          <p className={styles.noteCount} data-note-count={type}>
+            <strong>{noteCounts[type]}</strong> note ascoltate
+          </p>
+        )}
       </article>
     );
   }
   return (
     <section className={styles.game} aria-labelledby="chirality-title">
+      <dialog
+        ref={resultsDialog}
+        className={styles.resultsDialog}
+        aria-labelledby="results-title"
+        aria-describedby="results-description"
+        onClose={() => nextButton.current?.focus()}
+      >
+        <p className={styles.eyebrow}>PARTITA COMPLETATA</p>
+        <h2 id="results-title">I tuoi risultati</h2>
+        <p id="results-description">Hai completato tutti i {TOTAL} turni.</p>
+        <dl className={styles.resultStats}>
+          <div>
+            <dt>Risposte corrette</dt>
+            <dd>
+              {score} / {TOTAL}
+            </dd>
+          </div>
+          <div>
+            <dt>Precisione</dt>
+            <dd>{Math.round((score / TOTAL) * 100)}%</dd>
+          </div>
+          <div>
+            <dt>Note ascoltate</dt>
+            <dd>{notesTotal}</dd>
+          </div>
+          <div>
+            <dt>Note / turno</dt>
+            <dd>{notesPerTurn}</dd>
+          </div>
+        </dl>
+        <p className={styles.resultHint}>
+          Le note conteggiate sono quelle ascoltate nei due candidati.
+        </p>
+        <div className={styles.resultActions}>
+          <button type="button" className={styles.primary} onClick={() => newRound(true)}>
+            Nuova partita
+          </button>
+          <button type="button" onClick={() => resultsDialog.current?.close()}>
+            Chiudi risultati
+          </button>
+        </div>
+      </dialog>
       <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>IL NASO E LA CHIRALITÀ</p>
@@ -281,9 +379,17 @@ export default function ChiralityGame() {
           </strong>
           <span>risposte corrette</span>
         </div>
+        <div className={styles.score} data-audio-score>
+          <strong>{notesPerTurn}</strong>
+          <span>note / turno</span>
+          <span>
+            {notesTotal} note · {turnsStarted} turni
+          </span>
+        </div>
       </header>
       <div className={styles.toolbar}>
-        Ruota lo stampo e le molecole. I colori e le lettere devono coincidere tutti insieme.
+        Ruota lo stampo e le molecole. I colori e le lettere devono coincidere tutti insieme oppure
+        utilizza l’aiuto musicale.
       </div>
       <div className={styles.board}>
         {candidate('A')}
@@ -297,17 +403,20 @@ export default function ChiralityGame() {
             <span className={styles.pill}>Geometria 3D</span>
           </div>
           <div className={styles.viewSelector} role="group" aria-label="Vista del recettore">
-            <button type="button" aria-pressed={view === 'mold'} onClick={() => setView('mold')}>
+            <button type="button" aria-pressed={view === 'mold'} onClick={() => changeView('mold')}>
               Facile
             </button>
             <button
               type="button"
               aria-pressed={view === 'receptor'}
-              onClick={() => setView('receptor')}
+              onClick={() => changeView('receptor')}
             >
               Difficile
             </button>
           </div>
+          <p className={styles.audioStatus} role="status" aria-live="polite">
+            {music.message}
+          </p>
           <h2>
             {finished
               ? 'Sfida completata'
@@ -329,8 +438,8 @@ export default function ChiralityGame() {
                     label="Recettore a disco con molecola"
                   />
                   <p className={styles.hint}>
-                    I tre gruppi inferiori sono nascosti nelle tasche. Le lettere sulle tasche
-                    indicano quali gruppi ospitano. Confronta l’ordine spaziale con le due molecole.
+                    I tre gruppi inferiori sono nascosti nelle tasche. Le lettere indicano quali
+                    gruppi ospitano. Confronta l’ordine spaziale con le due molecole.
                   </p>
                 </>
               ) : (
@@ -350,6 +459,7 @@ export default function ChiralityGame() {
                   </p>
                 </>
               )}
+              {listenButton(round.type, 'challenge', 'il modello misterioso')}
               <div className={styles.choices}>
                 <button type="button" disabled={answer !== null} onClick={() => guess('A')}>
                   Menta
@@ -450,6 +560,7 @@ export default function ChiralityGame() {
           </span>
         ))}
       </div>
+
       <details className={styles.explanation}>
         <summary>Come leggere i due modelli</summary>
         <p>
@@ -485,6 +596,27 @@ export default function ChiralityGame() {
           >
             Fonte: American Chemical Society — carvone
           </a>
+        </p>
+      </details>
+      <details className={styles.explanation}>
+        <summary>Come funziona l’aiuto musicale</summary>
+        <p>
+          In Facile e Difficile ogni turno propone un nuovo brano di quattro battute. Maggiore e
+          minore vengono assegnati casualmente ai due candidati, uno per ciascuno. Il modello
+          misterioso mantiene la modalità del candidato corretto, ma cambia la frase melodica delle
+          prime due battute, conservando ritmo e accompagnamento. Le ultime due battute restano
+          comuni e concludono sulla tonica. I pulsanti ♪ avviano il brano e diventano ■ per
+          interromperlo. La frase e le associazioni restano stabili durante il turno, anche
+          riascoltando o cambiando difficoltà. L’associazione tra musica e molecole è una
+          convenzione del gioco.
+        </p>
+        <p>
+          I contatori dei candidati sommano le note della melodia effettivamente iniziate, inclusi i
+          riascolti. Accompagnamento e modello misterioso non incrementano il conteggio. Lo score è
+          il totale delle note dei due candidati diviso i turni, compreso quello corrente: un valore
+          più basso indica meno aiuti ascoltati per turno. I contatori visibili ripartono da zero a
+          ogni turno. Il totale usato per lo score resta cumulativo e si azzera solo con «Gioca
+          ancora».
         </p>
       </details>
     </section>
